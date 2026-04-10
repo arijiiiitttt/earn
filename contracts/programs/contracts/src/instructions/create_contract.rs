@@ -55,8 +55,6 @@ pub fn handler(
     let total_amount: u64 = milestones.iter().map(|m| m.amount).sum();
     require!(total_amount > 0, TrustPayError::ZeroAmount);
 
-    // 2. ✅ FIXED CPI Transfer logic
-    // We use .key() for the system_program instead of .to_account_info()
     let cpi_accounts = Transfer {
         from: ctx.accounts.client.to_account_info(),
         to: ctx.accounts.vault.to_account_info(),
