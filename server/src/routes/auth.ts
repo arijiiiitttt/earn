@@ -19,7 +19,7 @@ router.post("/nonce", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "Invalid Solana wallet address" });
     }
 
-    const nonce = `Sign in to TrustPay: ${Math.random()
+    const nonce = `Sign in to earn: ${Math.random()
       .toString(36)
       .slice(2)}_${Date.now()}`;
 

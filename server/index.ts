@@ -51,7 +51,7 @@ app.use(errorHandler);
 
 connectDB().then(() => {
   app.listen(PORT, () => {
-    console.log(`\n TrustPay Server running at http://localhost:${PORT}`);
+    console.log(`\n earn server running at http://localhost:${PORT}`);
     console.log(`Network: ${process.env.NODE_ENV}\n`);
   });
 });
