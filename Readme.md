@@ -16,7 +16,7 @@
 
 ---
 
-# Earn — Decentralized Freelance Marketplace on Solana
+# What is Earn then ???
 
 > Trustless escrow. Milestone payments. No middlemen.
 
@@ -68,11 +68,11 @@ The backend manages data and application logic. The smart contract handles funds
 ## Architecture
 
 ```
-Frontend (React)
+Frontend (Vite + Bun)
      │
      ├── Wallet Connect (Phantom)
      │
-     ├── POST /jobs → Backend (Express)
+     ├── POST /jobs → Backend (Express+ Bun)
      │        └── Save metadata → PostgreSQL
      │
      └── Lock funds → Solana Program (Anchor)
@@ -173,6 +173,4 @@ Student. Building things that handle real money and real stakes.
 
 ---
 
-## License
 
-MIT
