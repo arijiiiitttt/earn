@@ -1,7 +1,6 @@
 import { defineConfig } from 'vite'
 import react, { reactCompilerPreset } from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-import { Buffer } from "buffer";
 import babel from '@rolldown/plugin-babel'
 
 // https://vite.dev/config/
@@ -10,18 +9,22 @@ export default defineConfig({
     react(),
     tailwindcss(),
     babel({ presets: [reactCompilerPreset()] })
-  ],define: {
-    "process.env": {},
-    global: "globalThis",
-    Buffer: Buffer,
+  ],
+  define: {
+    // We wrap values in JSON.stringify so the bundler gets a string 
+    // containing the code to inject, rather than an undefined/object value.
+    "process.env": JSON.stringify({}),
+    "global": JSON.stringify("globalThis"),
+    "Buffer": JSON.stringify("Buffer"), 
   },
   resolve: {
     alias: {
       "@": "/src",
-       buffer: "buffer",
+      // This tells Vite to resolve the 'buffer' package when needed
+      buffer: "buffer",
     },
-    optimizeDeps: {
-    include: ["buffer"],
   },
+  optimizeDeps: {
+    include: ["buffer"],
   },
 })

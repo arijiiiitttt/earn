@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { TrendingUp, Briefcase, Star, Wallet } from "lucide-react";
+import { TrendingUp, Briefcase, Star } from "lucide-react";
 import type { User } from "../../types";
 import { useBalance } from "../../hooks/useBalance";
 import { SiSolana } from "react-icons/si";

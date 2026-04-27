@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Edit2, Save, X, ExternalLink, Copy, Wallet, Award, CheckCircle, Shield, RefreshCw } from "lucide-react";
 import toast from "react-hot-toast";
 import { useAuthStore } from "../store/auth";
-import { usersApi, shortenAddress } from "../lib/api";
+import { usersApi } from "../lib/api";
 import { SiSolana } from "react-icons/si";
 import { useBalance } from "../hooks/useBalance";
 import { Spinner } from "../components/ui/Spinner";
@@ -18,7 +18,7 @@ export function Profile() {
   const { balance, refresh: refreshBalance } = useBalance();
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [_loading, setLoading] = useState(true);
   const [newSkill, setNewSkill] = useState("");
 
   const [form, setForm] = useState({

@@ -7,7 +7,6 @@ import {
   Store,
   User,
   LogOut,
-  Zap,
   Menu,
   X
 } from "lucide-react";

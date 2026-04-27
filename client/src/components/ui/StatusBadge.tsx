@@ -1,7 +1,7 @@
-import type { ContractStatus, MilestoneStatus } from "../../types";
+import type { ContractStatus, MilestoneStatus, SubmissionStatus } from "../../types";
 
 interface StatusBadgeProps {
-  status: ContractStatus | MilestoneStatus;
+  status: ContractStatus | MilestoneStatus |SubmissionStatus;
 }
 
 export function StatusBadge({ status }: StatusBadgeProps) {
@@ -14,6 +14,7 @@ export function StatusBadge({ status }: StatusBadgeProps) {
     pending: "inline-flex items-center gap-1.5 px-2 py-0.5 rounded-sm text-xs font-mono bg-text-muted/10 text-text-muted border border-text-muted/20",
     submitted: "status-active",
     approved: "status-completed",
+    accepted: "status-completed",
   };
 
   const dot: Record<string, string> = {
@@ -24,6 +25,7 @@ export function StatusBadge({ status }: StatusBadgeProps) {
     disputed: "bg-yellow-500",
     pending: "bg-text-muted",
     submitted: "bg-blue-400",
+    accepted: "bg-purple-400",
     approved: "bg-purple-400",
   };
 

@@ -2,9 +2,8 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  ArrowLeft, Clock, User, ExternalLink, Hash, CheckCircle2, ShieldCheck, 
-  Users, Calendar, Info, GitPullRequest, AlertCircle, FileText, Code, 
-  ChevronRight, Box
+   Clock, User, ExternalLink, Hash, CheckCircle2, ShieldCheck, 
+  Users, Calendar, GitPullRequest, AlertCircle, FileText, Code
 } from "lucide-react";
 import { SiSolana } from "react-icons/si";
 import toast from "react-hot-toast";
@@ -167,7 +166,7 @@ export function ContractPage() {
                   Job's Description
                 </div>
                 <div className="text-[10px] text-[#636c76] font-sans">
-                  Last updated {formatDate(contract.createdAt || new Date())}
+Last updated {formatDate(contract.createdAt?.toString() || new Date().toISOString())}
                 </div>
               </div>
               <div className="p-6 md:p-8">
@@ -225,7 +224,7 @@ export function ContractPage() {
               </motion.div>
             </AnimatePresence>
           </div>
-
+<p className="text-xs font-bold text-[#1f2328]">{formatDate(contract.deadline?.toString() || "")}</p>
           {/* Sidebar (Right) */}
           <div className="lg:col-span-3 space-y-6">
             <section className="space-y-4">

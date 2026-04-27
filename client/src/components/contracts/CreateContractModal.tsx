@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, Trash2, Zap, AlertCircle, Terminal, Clipboard } from "lucide-react";
+import { Plus, Trash2, AlertCircle, Terminal, Clipboard } from "lucide-react";
 import toast from "react-hot-toast";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { Modal } from "../ui/Modal";

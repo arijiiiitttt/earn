@@ -163,7 +163,7 @@ export async function approveMilestoneOnChain(
   }
 
   // Fetch the contract account data to check milestone status
-  const contractAccount = await program.account.contractAccount.fetch(contractPDA);
+const contractAccount = await (program.account as any).contractAccount.fetch(contractPDA);
   const milestone = contractAccount.milestones[milestoneIndex];
 
   // Anchor serializes enums as objects: { approved: {} }, { pending: {} } etc.

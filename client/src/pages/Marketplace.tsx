@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
-import { Search, Plus, Briefcase, Filter, X, ChevronDown, Check, Hash } from "lucide-react";
+import { AnimatePresence } from "framer-motion";
+import { Search, Plus, Briefcase, Filter, X, ChevronDown, Check} from "lucide-react";
 import { contractsApi } from "../lib/api";
 import type { Contract } from "../types";
 import { ContractCard } from "../components/contracts/ContractCard";
