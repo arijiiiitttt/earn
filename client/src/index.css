@@ -1,2 +1,53 @@
 @import "tailwindcss";
 
+@font-face {
+  font-family:Bowlby;
+  src: url(/fonts/BowlbyOne-Regular.ttf);
+}
+.bol{
+  font-family:Bowlby,sans-serif;
+}
+
+@font-face {
+  font-family:Cool;
+  src: url(/fonts/2.ttf);
+}
+.col{
+  font-family:Cool,sans-serif;
+}
+@font-face {
+  font-family:Cooll ;
+  src: url(/fonts/111.woff2);
+}
+.cool{
+  font-family:Cooll,sans-serif;
+}
+
+@font-face {
+  font-family:Main ;
+  src: url(/fonts/Main.woff2);
+}
+.main{
+  font-family:Main,sans-serif;
+}
+
+@font-face {
+  font-family:Five ;
+  src: url(/fonts/5.ttf);
+}
+.five{
+  font-family:Five,sans-serif;
+}
+
+@font-face {
+  font-family:Fivee ;
+  src: url(/fonts/55.ttf);
+}
+.fivee{
+  font-family:Five,sans-serif;
+}
+
+.wallet-adapter-button {
+  border-radius: 99px !important;
+}
+

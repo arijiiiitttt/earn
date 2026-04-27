@@ -15,7 +15,7 @@ export const authenticate = (
 ): void => {
   const authHeader = req.headers.authorization;
 
-  if (!authHeader?.startsWith("Bearer ")) {
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
     res.status(401).json({ error: "No token provided" });
     return;
   }

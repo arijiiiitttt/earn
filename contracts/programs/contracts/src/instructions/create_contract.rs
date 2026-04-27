@@ -19,7 +19,7 @@ pub struct CreateContract<'info> {
     #[account(
         init,
         payer = client,
-        space = 8, // Initial space for the vault account
+        space = 8,
         seeds = [VAULT_SEED, contract.key().as_ref()],
         bump
     )]
@@ -59,14 +59,14 @@ pub fn handler(
         from: ctx.accounts.client.to_account_info(),
         to: ctx.accounts.vault.to_account_info(),
     };
-    
+
     let cpi_ctx = CpiContext::new(
-        ctx.accounts.system_program.key(), 
+        ctx.accounts.system_program.key(),
         cpi_accounts,
     );
     system_program::transfer(cpi_ctx, total_amount)?;
 
-    // 3. State initialization
+    // 2. State initialization
     contract.contract_id = contract_id;
     contract.title = title;
     contract.client = ctx.accounts.client.key();
@@ -78,7 +78,7 @@ pub fn handler(
     contract.bump = ctx.bumps.contract;
     contract.vault_bump = ctx.bumps.vault;
 
-    // 4. Convert inputs to state milestones
+    // 3. Convert inputs to state milestones
     contract.milestones = milestones
         .into_iter()
         .enumerate()

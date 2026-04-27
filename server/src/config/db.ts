@@ -1,28 +1,15 @@
-import { Pool } from "pg";
+import { neon } from "@neondatabase/serverless";
+import { drizzle } from "drizzle-orm/neon-http";
+import * as schema from "../schema";
 import dotenv from "dotenv";
 
 dotenv.config();
 
-export const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }, 
-  max: 10,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 5000,
-});
+if (!process.env.DATABASE_URL) {
+  throw new Error("DATABASE_URL is not set in .env file");
+}
 
-export const query = <T = any>(
-  text: string,
-  params?: unknown[]
-): Promise<{ rows: T[]; rowCount: number | null }> =>
-  pool.query(text, params);
+const sql = neon(process.env.DATABASE_URL);
+export const db = drizzle(sql, { schema });
 
-export const connectDB = async (): Promise<void> => {
-  const client = await pool.connect();
-  try {
-    await client.query("SELECT 1");
-    console.log("NeonDB (PostgreSQL) connected");
-  } finally {
-    client.release();
-  }
-};
+export type DB = typeof db;

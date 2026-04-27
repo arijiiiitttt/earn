@@ -1,202 +1,265 @@
 import { Router, Response } from "express";
 import { z } from "zod";
-import { v4 as uuidv4 } from "uuid";
-import { PublicKey } from "@solana/web3.js";
-import { query } from "../config/db";
+import { db } from "../config/db";
+import { contracts, milestones, submissions, users } from "../schema";
 import { authenticate, AuthRequest } from "../middlewares/auth";
+import { eq, and, desc } from "drizzle-orm";
 
 const router = Router();
 
-const CreateContractSchema = z.object({
-  title: z.string().min(3).max(100),
-  description: z.string().min(10).max(1000),
-  freelancerWallet: z.string(),
-  deadline: z.string().datetime(),
-  milestones: z
-    .array(
-      z.object({
-        title: z.string().min(2).max(100),
-        description: z.string().min(5).max(500),
-        amount: z.number().positive(),
-      })
-    )
-    .min(1)
-    .max(10),
-  onChainAddress: z.string(),
-  txSignature: z.string(),
+const MilestoneInputSchema = z.object({
+  title: z.string().min(1).max(100),
+  description: z.string().min(1).max(500),
+  amount: z.number().positive(),
 });
 
-// Helper: get contract with milestones
-async function getContractWithMilestones(contractId: string) {
-  const contractRes = await query(
-    `SELECT * FROM contracts WHERE contract_id = $1`,
-    [contractId]
-  );
-  if (!contractRes.rows.length) return null;
+const CreateContractSchema = z.object({
+  contractId: z.string().min(1).max(32).optional(),
+  title: z.string().min(3).max(100),
+  description: z.string().min(10).max(1000),
+  requirements: z.string().optional(),
+  category: z.string().optional(),
+  tags: z.array(z.string()).optional().default([]),
+  deadline: z.string(),
+  totalAmount: z.number().positive(),
+  milestones: z.array(MilestoneInputSchema).min(1).max(10),
+  onChainAddress: z.string().optional().default("pending"),
+  txSignature: z.string().optional().default("pending"),
+});
 
-  const contract = contractRes.rows[0];
-  const milestoneRes = await query(
-    `SELECT * FROM milestones WHERE contract_id = $1 ORDER BY index`,
-    [contractId]
-  );
-  contract.milestones = milestoneRes.rows;
-  return contract;
-}
-
-router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
+router.get("/", async (req, res: Response) => {
   try {
-    const wallet = req.user!.walletAddress;
-    const { role, status, page = "1", limit = "10" } = req.query;
-
-    const pageNum = parseInt(page as string);
-    const limitNum = parseInt(limit as string);
-    const offset = (pageNum - 1) * limitNum;
-
-    let whereClause = "";
-    const params: unknown[] = [wallet, wallet, limitNum, offset];
-
-    if (role === "client") {
-      whereClause = "WHERE c.client_wallet = $1";
-      params.splice(1, 1); // remove second wallet
-      params[0] = wallet;
-    } else if (role === "freelancer") {
-      whereClause = "WHERE c.freelancer_wallet = $1";
-      params.splice(1, 1);
-      params[0] = wallet;
-    } else {
-      whereClause = "WHERE (c.client_wallet = $1 OR c.freelancer_wallet = $2)";
-    }
-
-    // Rebuild params cleanly
-    const queryParams: unknown[] = [];
-    let sql = "";
-
-    if (role === "client") {
-      queryParams.push(wallet);
-      sql = `WHERE c.client_wallet = $1`;
-    } else if (role === "freelancer") {
-      queryParams.push(wallet);
-      sql = `WHERE c.freelancer_wallet = $1`;
-    } else {
-      queryParams.push(wallet, wallet);
-      sql = `WHERE (c.client_wallet = $1 OR c.freelancer_wallet = $2)`;
-    }
+    const { status, wallet } = req.query;
 
     if (status) {
-      queryParams.push(status);
-      sql += ` AND c.status = $${queryParams.length}`;
+      const allContracts = await db.select().from(contracts);
+      const filtered = allContracts.filter((c) => c.status === status);
+      const withMilestones = await Promise.all(
+        filtered.map(async (c) => {
+          const ms = await db
+            .select()
+            .from(milestones)
+            .where(eq(milestones.contractId, c.contractId));
+          return { ...c, milestones: ms };
+        })
+      );
+      return res.json({ contracts: withMilestones });
     }
 
-    const totalRes = await query(
-      `SELECT COUNT(*) FROM contracts c ${sql}`,
-      queryParams
-    );
-    const total = parseInt(totalRes.rows[0].count);
+    if (wallet) {
+      const all = await db.select().from(contracts);
+      const w = wallet as string;
+      const userContracts = all.filter(
+        (c) =>
+          c.clientWallet.toLowerCase() === w.toLowerCase() ||
+          c.freelancerWallet?.toLowerCase() === w.toLowerCase()
+      );
+      const withMilestones = await Promise.all(
+        userContracts.map(async (c) => {
+          const ms = await db
+            .select()
+            .from(milestones)
+            .where(eq(milestones.contractId, c.contractId));
+          return { ...c, milestones: ms };
+        })
+      );
+      return res.json({ contracts: withMilestones });
+    }
 
-    queryParams.push(limitNum, offset);
-    const contractsRes = await query(
-      `SELECT c.*, json_agg(m.* ORDER BY m.index) AS milestones
-       FROM contracts c
-       LEFT JOIN milestones m ON m.contract_id = c.contract_id
-       ${sql}
-       GROUP BY c.id
-       ORDER BY c.created_at DESC
-       LIMIT $${queryParams.length - 1} OFFSET $${queryParams.length}`,
-      queryParams
+    const allContracts = await db
+      .select()
+      .from(contracts)
+      .orderBy(desc(contracts.createdAt));
+
+    const withMilestones = await Promise.all(
+      allContracts.map(async (c) => {
+        const ms = await db
+          .select()
+          .from(milestones)
+          .where(eq(milestones.contractId, c.contractId));
+        return { ...c, milestones: ms };
+      })
     );
 
-    return res.json({
-      contracts: contractsRes.rows,
-      pagination: {
-        page: pageNum,
-        limit: limitNum,
-        total,
-        pages: Math.ceil(total / limitNum),
-      },
-    });
+    return res.json({ contracts: withMilestones });
   } catch (error) {
-    console.error(error);
+    console.error("GET /contracts error:", error);
     return res.status(500).json({ error: "Failed to fetch contracts" });
   }
 });
 
-router.get(
-  "/:contractId",
-  authenticate,
-  async (req: AuthRequest, res: Response) => {
-    try {
-      const contract = await getContractWithMilestones(req.params.contractId);
-      if (!contract) return res.status(404).json({ error: "Not found" });
+router.get("/my", authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const wallet = req.user!.walletAddress;
 
-      const wallet = req.user!.walletAddress;
-      if (
-        contract.client_wallet !== wallet &&
-        contract.freelancer_wallet !== wallet
-      ) {
-        return res.status(403).json({ error: "Access denied" });
-      }
+    const all = await db.select().from(contracts).orderBy(desc(contracts.createdAt));
+    const mine = all.filter(
+      (c) => c.clientWallet.toLowerCase() === wallet.toLowerCase() || c.freelancerWallet?.toLowerCase() === wallet.toLowerCase()
+    );
 
-      return res.json(contract);
-    } catch {
-      return res.status(500).json({ error: "Failed to fetch contract" });
-    }
+    const withMilestones = await Promise.all(
+      mine.map(async (c) => {
+        const ms = await db
+          .select()
+          .from(milestones)
+          .where(eq(milestones.contractId, c.contractId));
+        return { ...c, milestones: ms };
+      })
+    );
+
+    return res.json({ contracts: withMilestones });
+  } catch (error) {
+    console.error("GET /contracts/my error:", error);
+    return res.status(500).json({ error: "Failed to fetch your contracts" });
   }
-);
+});
+
+router.get("/:contractId", async (req, res: Response) => {
+  try {
+    const [contract] = await db
+      .select()
+      .from(contracts)
+      .where(eq(contracts.contractId, req.params.contractId))
+      .limit(1);
+
+    if (!contract) {
+      return res.status(404).json({ error: "Contract not found" });
+    }
+
+    const ms = await db
+      .select()
+      .from(milestones)
+      .where(eq(milestones.contractId, contract.contractId));
+
+    const subs = await db
+      .select()
+      .from(submissions)
+      .where(eq(submissions.contractId, contract.contractId));
+
+    return res.json({ ...contract, milestones: ms, submissions: subs });
+  } catch (error) {
+    console.error("GET /contracts/:id error:", error);
+    return res.status(500).json({ error: "Failed to fetch contract" });
+  }
+});
 
 router.post("/", authenticate, async (req: AuthRequest, res: Response) => {
   try {
+    console.log("Create contract body:", JSON.stringify(req.body, null, 2));
+
     const parsed = CreateContractSchema.safeParse(req.body);
-    if (!parsed.success)
-      return res.status(400).json({ error: parsed.error.flatten() });
+    if (!parsed.success) {
+      console.error("Validation error:", parsed.error.flatten());
+      return res.status(400).json({
+        error: "Validation failed",
+        details: parsed.error.flatten(),
+      });
+    }
 
     const data = parsed.data;
-    const clientWallet = req.user!.walletAddress;
+    const clientWallet = req.user!.walletAddress; // no lowercase — store as-is
 
+    const contractId = data.contractId || Math.random().toString(36).slice(2, 18);
+
+    let deadlineDate: Date;
     try {
-      new PublicKey(data.freelancerWallet);
+      deadlineDate = new Date(data.deadline);
+      if (isNaN(deadlineDate.getTime())) throw new Error("bad date");
     } catch {
-      return res.status(400).json({ error: "Invalid freelancer wallet" });
+      return res.status(400).json({ error: "Invalid deadline format" });
     }
 
-    const totalAmount = data.milestones.reduce((s, m) => s + m.amount, 0);
-    const contractId = uuidv4();
+    console.log("Creating contract:", contractId);
 
-    // Insert contract
-    await query(
-      `INSERT INTO contracts
-         (contract_id, title, description, client_wallet, freelancer_wallet,
-          total_amount, deadline, on_chain_address, tx_signatures)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-      [
+    const [contract] = await db
+      .insert(contracts)
+      .values({
         contractId,
-        data.title,
-        data.description,
-        clientWallet.toLowerCase(),
-        data.freelancerWallet.toLowerCase(),
-        totalAmount,
-        new Date(data.deadline),
-        data.onChainAddress,
-        [data.txSignature],
-      ]
-    );
+        title: data.title,
+        description: data.description,
+        requirements: data.requirements,
+        category: data.category,
+        tags: data.tags,
+        clientWallet, // no lowercase
+        totalAmount: data.totalAmount,
+        deadline: deadlineDate,
+        status: "open",
+        onChainAddress: data.onChainAddress,
+        txSignatures: [data.txSignature],
+      })
+      .returning();
 
-    // Insert milestones
-    for (let i = 0; i < data.milestones.length; i++) {
-      const m = data.milestones[i];
-      await query(
-        `INSERT INTO milestones (contract_id, index, title, description, amount)
-         VALUES ($1,$2,$3,$4,$5)`,
-        [contractId, i, m.title, m.description, m.amount]
-      );
-    }
+    const insertedMilestones = await db
+      .insert(milestones)
+      .values(
+        data.milestones.map((m, i) => ({
+          contractId,
+          index: i,
+          title: m.title,
+          description: m.description,
+          amount: m.amount,
+          status: "pending" as const,
+        }))
+      )
+      .returning();
 
-    const contract = await getContractWithMilestones(contractId);
-    return res.status(201).json(contract);
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({ error: "Failed to create contract" });
+    console.log("Contract saved:", contractId);
+
+    return res.status(201).json({
+      ...contract,
+      milestones: insertedMilestones,
+    });
+  } catch (error: any) {
+    console.error("POST /contracts error:", error);
+    return res.status(500).json({
+      error: "Failed to create contract",
+      message: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
   }
 });
+
+router.patch(
+  "/:contractId/onchain",
+  authenticate,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const { contractId } = req.params;
+      const { onChainAddress, txSignature } = req.body;
+
+      if (!onChainAddress || !txSignature) {
+        return res.status(400).json({ error: "onChainAddress and txSignature are required" });
+      }
+
+      const [contract] = await db
+        .select()
+        .from(contracts)
+        .where(eq(contracts.contractId, contractId))
+        .limit(1);
+
+      if (!contract) return res.status(404).json({ error: "Contract not found" });
+
+      if (contract.clientWallet.toLowerCase() !== req.user!.walletAddress.toLowerCase()) {
+        return res.status(403).json({ error: "Only the client can update on-chain data" });
+      }
+
+      const [updated] = await db
+        .update(contracts)
+        .set({
+          onChainAddress,
+          txSignatures: [...(contract.txSignatures ?? []), txSignature],
+          updatedAt: new Date(),
+        })
+        .where(eq(contracts.contractId, contractId))
+        .returning();
+
+      console.log(`On-chain address saved for ${contractId}: ${onChainAddress}`);
+      return res.json(updated);
+    } catch (error) {
+      console.error("PATCH /onchain error:", error);
+      return res.status(500).json({ error: "Failed to save on-chain address" });
+    }
+  }
+);
 
 router.patch(
   "/:contractId/milestone/:index/submit",
@@ -204,39 +267,62 @@ router.patch(
   async (req: AuthRequest, res: Response) => {
     try {
       const { contractId, index } = req.params;
-      const { txSignature, submissionNote } = req.body;
+      const { submissionNote, txSignature } = req.body;
 
-      const contractRes = await query(
-        `SELECT * FROM contracts WHERE contract_id = $1`,
-        [contractId]
-      );
-      if (!contractRes.rows.length)
-        return res.status(404).json({ error: "Not found" });
+      const [contract] = await db
+        .select()
+        .from(contracts)
+        .where(eq(contracts.contractId, contractId))
+        .limit(1);
 
-      const contract = contractRes.rows[0];
-      if (contract.freelancer_wallet !== req.user!.walletAddress)
-        return res
-          .status(403)
-          .json({ error: "Only the freelancer can submit" });
+      if (!contract) return res.status(404).json({ error: "Contract not found" });
 
-      await query(
-        `UPDATE milestones
-         SET status = 'submitted', submission_note = $1, submitted_at = NOW()
-         WHERE contract_id = $2 AND index = $3`,
-        [submissionNote || null, contractId, parseInt(index)]
-      );
-
-      if (txSignature) {
-        await query(
-          `UPDATE contracts
-           SET tx_signatures = array_append(tx_signatures, $1)
-           WHERE contract_id = $2`,
-          [txSignature, contractId]
-        );
+      if (contract.freelancerWallet?.toLowerCase() !== req.user!.walletAddress.toLowerCase()) {
+        return res.status(403).json({ error: "Only the assigned freelancer can submit" });
       }
 
-      return res.json(await getContractWithMilestones(contractId));
-    } catch {
+      const mIndex = parseInt(index);
+      const [milestone] = await db
+        .select()
+        .from(milestones)
+        .where(
+          and(
+            eq(milestones.contractId, contractId),
+            eq(milestones.index, mIndex)
+          )
+        )
+        .limit(1);
+
+      if (!milestone) return res.status(404).json({ error: "Milestone not found" });
+
+      if (milestone.status !== "pending" && milestone.status !== "submitted") {
+        return res.status(400).json({ error: "Milestone already submitted" });
+      }
+
+      if (milestone.status === "pending") {
+        await db
+          .update(milestones)
+          .set({
+            status: "submitted",
+            submissionNote: submissionNote || "",
+            submittedAt: new Date(),
+          })
+          .where(eq(milestones.id, milestone.id));
+      }
+
+      if (txSignature) {
+        await db
+          .update(contracts)
+          .set({
+            txSignatures: [...(contract.txSignatures || []), txSignature],
+          })
+          .where(eq(contracts.contractId, contractId));
+      }
+
+      const updated = await _getContractWithDetails(contractId);
+      return res.json(updated);
+    } catch (error) {
+      console.error("Submit milestone error:", error);
       return res.status(500).json({ error: "Failed to submit milestone" });
     }
   }
@@ -250,49 +336,99 @@ router.patch(
       const { contractId, index } = req.params;
       const { txSignature } = req.body;
 
-      const contractRes = await query(
-        `SELECT * FROM contracts WHERE contract_id = $1`,
-        [contractId]
-      );
-      if (!contractRes.rows.length)
-        return res.status(404).json({ error: "Not found" });
+      const [contract] = await db
+        .select()
+        .from(contracts)
+        .where(eq(contracts.contractId, contractId))
+        .limit(1);
 
-      if (contractRes.rows[0].client_wallet !== req.user!.walletAddress)
-        return res
-          .status(403)
-          .json({ error: "Only the client can approve" });
+      if (!contract) return res.status(404).json({ error: "Contract not found" });
 
-      await query(
-        `UPDATE milestones
-         SET status = 'approved', approved_at = NOW()
-         WHERE contract_id = $1 AND index = $2`,
-        [contractId, parseInt(index)]
+      if (contract.clientWallet.toLowerCase() !== req.user!.walletAddress.toLowerCase()) {
+        return res.status(403).json({ error: "Only the client can approve" });
+      }
+
+      const mIndex = parseInt(index);
+      const [milestone] = await db
+        .select()
+        .from(milestones)
+        .where(
+          and(
+            eq(milestones.contractId, contractId),
+            eq(milestones.index, mIndex)
+          )
+        )
+        .limit(1);
+
+      if (!milestone) return res.status(404).json({ error: "Milestone not found" });
+
+      if (milestone.status !== "submitted" && milestone.status !== "approved") {
+        return res.status(400).json({ error: "Milestone has not been submitted" });
+      }
+
+      if (milestone.status === "submitted") {
+        await db
+          .update(milestones)
+          .set({ status: "approved", approvedAt: new Date() })
+          .where(eq(milestones.id, milestone.id));
+      }
+
+      const allMs = await db
+        .select()
+        .from(milestones)
+        .where(eq(milestones.contractId, contractId));
+
+      const allApproved = allMs.every((m) =>
+        m.id === milestone.id ? true : m.status === "approved"
       );
+
+      if (allApproved && contract.status !== "completed") {
+        await db
+          .update(contracts)
+          .set({ status: "completed" })
+          .where(eq(contracts.contractId, contractId));
+
+        if (contract.freelancerWallet) {
+          const [freelancer] = await db
+            .select()
+            .from(users)
+            .where(eq(users.walletAddress, contract.freelancerWallet))
+            .limit(1);
+
+          if (freelancer) {
+            const newReputation = Math.min(
+              5.0,
+              parseFloat(((freelancer.reputation || 0) + 0.5).toFixed(1))
+            );
+            const newCompleted = (freelancer.completedContracts || 0) + 1;
+
+            await db
+              .update(users)
+              .set({
+                reputation: newReputation,
+                completedContracts: newCompleted,
+                updatedAt: new Date(),
+              })
+              .where(eq(users.walletAddress, contract.freelancerWallet));
+
+            console.log(`Reputation updated for ${contract.freelancerWallet}: ${newReputation}`);
+          }
+        }
+      }
 
       if (txSignature) {
-        await query(
-          `UPDATE contracts
-           SET tx_signatures = array_append(tx_signatures, $1)
-           WHERE contract_id = $2`,
-          [txSignature, contractId]
-        );
+        await db
+          .update(contracts)
+          .set({
+            txSignatures: [...(contract.txSignatures || []), txSignature],
+          })
+          .where(eq(contracts.contractId, contractId));
       }
 
-      // Check if all milestones approved → mark contract complete
-      const pending = await query(
-        `SELECT COUNT(*) FROM milestones
-         WHERE contract_id = $1 AND status != 'approved'`,
-        [contractId]
-      );
-      if (parseInt(pending.rows[0].count) === 0) {
-        await query(
-          `UPDATE contracts SET status = 'completed' WHERE contract_id = $1`,
-          [contractId]
-        );
-      }
-
-      return res.json(await getContractWithMilestones(contractId));
-    } catch {
+      const updated = await _getContractWithDetails(contractId);
+      return res.json(updated);
+    } catch (error) {
+      console.error("Approve milestone error:", error);
       return res.status(500).json({ error: "Failed to approve milestone" });
     }
   }
@@ -304,42 +440,39 @@ router.patch(
   async (req: AuthRequest, res: Response) => {
     try {
       const { contractId } = req.params;
-      const { milestoneIndex, txSignature } = req.body;
+      const { milestoneIndex } = req.body;
 
-      const contractRes = await query(
-        `SELECT * FROM contracts WHERE contract_id = $1`,
-        [contractId]
-      );
-      if (!contractRes.rows.length)
-        return res.status(404).json({ error: "Not found" });
+      const [contract] = await db
+        .select()
+        .from(contracts)
+        .where(eq(contracts.contractId, contractId))
+        .limit(1);
 
-      if (contractRes.rows[0].client_wallet !== req.user!.walletAddress)
-        return res
-          .status(403)
-          .json({ error: "Only the client can raise a dispute" });
+      if (!contract) return res.status(404).json({ error: "Contract not found" });
 
-      await query(
-        `UPDATE milestones SET status = 'disputed'
-         WHERE contract_id = $1 AND index = $2`,
-        [contractId, milestoneIndex]
-      );
-
-      await query(
-        `UPDATE contracts SET status = 'disputed' WHERE contract_id = $1`,
-        [contractId]
-      );
-
-      if (txSignature) {
-        await query(
-          `UPDATE contracts
-           SET tx_signatures = array_append(tx_signatures, $1)
-           WHERE contract_id = $2`,
-          [txSignature, contractId]
-        );
+      if (contract.clientWallet.toLowerCase() !== req.user!.walletAddress.toLowerCase()) {
+        return res.status(403).json({ error: "Only the client can raise a dispute" });
       }
 
-      return res.json(await getContractWithMilestones(contractId));
-    } catch {
+      await db
+        .update(milestones)
+        .set({ status: "disputed" })
+        .where(
+          and(
+            eq(milestones.contractId, contractId),
+            eq(milestones.index, milestoneIndex)
+          )
+        );
+
+      await db
+        .update(contracts)
+        .set({ status: "disputed" })
+        .where(eq(contracts.contractId, contractId));
+
+      const updated = await _getContractWithDetails(contractId);
+      return res.json(updated);
+    } catch (error) {
+      console.error("Dispute error:", error);
       return res.status(500).json({ error: "Failed to raise dispute" });
     }
   }
@@ -351,52 +484,62 @@ router.delete(
   async (req: AuthRequest, res: Response) => {
     try {
       const { contractId } = req.params;
-      const { txSignature } = req.body;
 
-      const contractRes = await query(
-        `SELECT * FROM contracts WHERE contract_id = $1`,
-        [contractId]
-      );
-      if (!contractRes.rows.length)
-        return res.status(404).json({ error: "Not found" });
+      const [contract] = await db
+        .select()
+        .from(contracts)
+        .where(eq(contracts.contractId, contractId))
+        .limit(1);
 
-      if (contractRes.rows[0].client_wallet !== req.user!.walletAddress)
-        return res
-          .status(403)
-          .json({ error: "Only the client can cancel" });
+      if (!contract) return res.status(404).json({ error: "Contract not found" });
 
-      const submitted = await query(
-        `SELECT COUNT(*) FROM milestones
-         WHERE contract_id = $1 AND status != 'pending'`,
-        [contractId]
-      );
-      if (parseInt(submitted.rows[0].count) > 0)
-        return res
-          .status(400)
-          .json({ error: "Cannot cancel after work has been submitted" });
-
-      await query(
-        `UPDATE contracts SET status = 'cancelled' WHERE contract_id = $1`,
-        [contractId]
-      );
-
-      if (txSignature) {
-        await query(
-          `UPDATE contracts
-           SET tx_signatures = array_append(tx_signatures, $1)
-           WHERE contract_id = $2`,
-          [txSignature, contractId]
-        );
+      if (contract.clientWallet.toLowerCase() !== req.user!.walletAddress.toLowerCase()) {
+        return res.status(403).json({ error: "Only the client can cancel" });
       }
 
-      return res.json({
-        message: "Contract cancelled",
-        contract: await getContractWithMilestones(contractId),
-      });
-    } catch {
-      return res.status(500).json({ error: "Failed to cancel contract" });
+      const ms = await db
+        .select()
+        .from(milestones)
+        .where(eq(milestones.contractId, contractId));
+
+      const hasSubmitted = ms.some((m) => m.status !== "pending");
+      if (hasSubmitted) {
+        return res.status(400).json({
+          error: "Cannot cancel after work has been submitted",
+        });
+      }
+
+      await db
+        .update(contracts)
+        .set({ status: "cancelled" })
+        .where(eq(contracts.contractId, contractId));
+
+      return res.json({ message: "Contract cancelled successfully" });
+    } catch (error) {
+      console.error("Cancel error:", error);
+      return res.status(500).json({ error: "Failed to cancel" });
     }
   }
 );
+
+async function _getContractWithDetails(contractId: string) {
+  const [contract] = await db
+    .select()
+    .from(contracts)
+    .where(eq(contracts.contractId, contractId))
+    .limit(1);
+
+  const ms = await db
+    .select()
+    .from(milestones)
+    .where(eq(milestones.contractId, contractId));
+
+  const subs = await db
+    .select()
+    .from(submissions)
+    .where(eq(submissions.contractId, contractId));
+
+  return { ...contract, milestones: ms, submissions: subs };
+}
 
 export default router;

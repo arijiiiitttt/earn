@@ -34,4 +34,7 @@ pub enum TrustPayError {
 
     #[msg("Cannot cancel after work has been submitted")]
     CannotCancelAfterSubmission,
+
+    #[msg("Contract ID must be 32 characters or less")]
+    ContractIdTooLong,
 }

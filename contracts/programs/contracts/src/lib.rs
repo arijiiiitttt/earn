@@ -5,8 +5,6 @@ pub mod state;
 
 use anchor_lang::prelude::*;
 
-// Explicitly import every instruction struct
-// This tells the #[program] macro exactly where to find the data accounts
 use instructions::create_contract::*;
 use instructions::submit_milestone::*;
 use instructions::approve_milestone::*;
